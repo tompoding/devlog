@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { Command } from 'commander';
-import { addEntry, getTodayEntries } from './journal.js';
+import { addEntry, getTodayEntries, hasEntry } from './journal.js';
 import { generateDailyReport } from './report.js';
 import { getGitRepoInfo, getTodayCommits } from './github.js';
 
@@ -61,6 +61,7 @@ async function handleReport() {
 
 /**
  * Handler untuk command 'sync' yang menarik commit hari ini dari GitHub.
+ * Commit yang sudah ada di jurnal (berdasarkan SHA) akan dilewati.
  */
 async function handleSync() {
   try {
@@ -73,13 +74,26 @@ async function handleSync() {
       return;
     }
     
-    console.log(`[INFO] Menemukan ${commits.length} commit hari ini. Menambahkan ke jurnal...`);
+    console.log(`[INFO] Menemukan ${commits.length} commit hari ini. Memeriksa duplikasi...`);
+    let added = 0;
+    let skipped = 0;
     // Menggunakan loop biasa untuk menjaga urutan penulisan file
     for (const commit of commits) {
-      const entryText = `[git] ${commit.message} (sha: ${commit.sha.substring(0, 7)})`;
+      const shortSha = commit.sha.substring(0, 7);
+      const entryText = `[git] ${commit.message} (sha: ${shortSha})`;
+      // Lewati jika SHA sudah ada di jurnal hari ini
+      if (await hasEntry(shortSha)) {
+        skipped++;
+        continue;
+      }
       await addEntry(entryText);
+      added++;
     }
-    console.log('[SUKSES] Sinkronisasi berhasil! Entri commit ditambahkan ke jurnal.');
+    if (added === 0) {
+      console.log('[INFO] Semua commit sudah tersinkronisasi, tidak ada entri baru.');
+    } else {
+      console.log(`[SUKSES] Sinkronisasi berhasil! ${added} entri commit ditambahkan ke jurnal.${skipped > 0 ? ` (${skipped} sudah ada, dilewati)` : ''}`);
+    }
   } catch (error) {
     console.error('[ERROR] Gagal menyinkronkan commit:', error.message);
     process.exit(1);

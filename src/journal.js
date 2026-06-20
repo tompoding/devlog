@@ -72,6 +72,24 @@ export async function addEntry(message) {
 }
 
 /**
+ * Memeriksa apakah sebuah substring sudah ada di file log hari ini.
+ * Digunakan untuk mencegah duplikasi entri [git] saat sync dijalankan berulang.
+ * @param {string} substring - Teks yang dicari (contoh: SHA commit).
+ * @returns {Promise<boolean>} True jika substring ditemukan.
+ */
+export async function hasEntry(substring) {
+  const today = getTodayDateString();
+  const logPath = getDailyLogPath(today);
+  try {
+    const content = await fs.readFile(logPath, 'utf-8');
+    return content.includes(substring);
+  } catch (error) {
+    if (error.code === 'ENOENT') return false;
+    throw error;
+  }
+}
+
+/**
  * Membaca semua entri jurnal dari file Markdown hari ini.
  * @returns {Promise<Array<string>>} Daftar entri jurnal harian.
  */
