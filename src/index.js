@@ -3,6 +3,7 @@
 import { Command } from 'commander';
 import { addEntry, getTodayEntries } from './journal.js';
 import { generateDailyReport } from './report.js';
+import { getGitRepoInfo, getTodayCommits } from './github.js';
 
 const program = new Command();
 
@@ -58,6 +59,33 @@ async function handleReport() {
   }
 }
 
+/**
+ * Handler untuk command 'sync' yang menarik commit hari ini dari GitHub.
+ */
+async function handleSync() {
+  try {
+    const { owner, repo } = await getGitRepoInfo();
+    console.log(`[INFO] Menarik commit hari ini dari GitHub repository ${owner}/${repo}...`);
+    const commits = await getTodayCommits(owner, repo);
+    
+    if (commits.length === 0) {
+      console.log('[INFO] Tidak ada commit baru yang ditemukan hari ini di GitHub.');
+      return;
+    }
+    
+    console.log(`[INFO] Menemukan ${commits.length} commit hari ini. Menambahkan ke jurnal...`);
+    // Menggunakan loop biasa untuk menjaga urutan penulisan file
+    for (const commit of commits) {
+      const entryText = `[git] ${commit.message} (sha: ${commit.sha.substring(0, 7)})`;
+      await addEntry(entryText);
+    }
+    console.log('[SUKSES] Sinkronisasi berhasil! Entri commit ditambahkan ke jurnal.');
+  } catch (error) {
+    console.error('[ERROR] Gagal menyinkronkan commit:', error.message);
+    process.exit(1);
+  }
+}
+
 program
   .command('log')
   .description('Tambah entri jurnal harian')
@@ -73,5 +101,10 @@ program
   .command('report')
   .description('Generate laporan Markdown untuk hari ini')
   .action(handleReport);
+
+program
+  .command('sync')
+  .description('Sinkronisasikan commit hari ini dari GitHub ke jurnal')
+  .action(handleSync);
 
 program.parse(process.argv);

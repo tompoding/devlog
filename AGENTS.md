@@ -44,6 +44,6 @@ node src/index.js status               # lihat entri hari ini
 
 ## Status saat ini
 [x] Fase 1: CLI dasar dengan commander.js
-[ ] Fase 2: Integrasi GitHub MCP
+[x] Fase 2: Integrasi GitHub MCP
 [ ] Fase 3: Subagent untuk proses paralel
 [ ] Fase 4: Scheduled nightly report

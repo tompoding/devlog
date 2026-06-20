@@ -111,39 +111,19 @@ function getTodayDateString() {
 }
 
 /**
- * Mengambil commit hari ini dari beberapa repository GitHub secara paralel menggunakan GitHub MCP Server.
- * @param {Array<string|object>} [repositories] - Daftar repository (format "owner/repo" atau {owner, repo}). Jika kosong, akan mendeteksi repo lokal.
- * @returns {Promise<Array>} Daftar commit hari ini dari semua repository.
+ * Mengambil n commit terakhir dari repository GitHub menggunakan GitHub MCP Server.
+ * @param {string} owner - Owner repository.
+ * @param {string} repo - Nama repository.
+ * @param {number} [limit=5] - Jumlah maksimal commit yang diambil.
+ * @returns {Promise<Array>} Daftar commit.
  */
-export async function getTodayCommits(repositories) {
+export async function getLastCommits(owner, repo, limit = 5) {
   const token = process.env.GITHUB_TOKEN;
   if (!token) {
-    console.warn('[WARN] GITHUB_TOKEN tidak diset di .env. Melewati integrasi GitHub.');
+    console.warn('[WARN] GITHUB_TOKEN tidak diset di .env.');
     return [];
   }
 
-  let reposToFetch = [];
-  if (repositories && repositories.length > 0) {
-    reposToFetch = repositories.map(r => {
-      if (typeof r === 'string') {
-        const parts = r.split('/');
-        return { owner: parts[0]?.trim(), repo: parts[1]?.trim() };
-      }
-      return r;
-    }).filter(r => r.owner && r.repo);
-  } else {
-    const localRepo = await getGitRepoInfo();
-    if (localRepo && localRepo.owner && localRepo.repo) {
-      reposToFetch.push(localRepo);
-    }
-  }
-
-  if (reposToFetch.length === 0) {
-    console.warn('[WARN] Tidak ada repository yang terdeteksi untuk diambil commit-nya.');
-    return [];
-  }
-
-  // Muat konfigurasi dari .mcp/config.json jika ada, jika tidak gunakan fallback default
   const mcpConfig = await loadMcpServerConfig('github');
   
   let transport;
@@ -171,48 +151,24 @@ export async function getTodayCommits(repositories) {
 
   try {
     await client.connect(transport);
-    
-    const today = getTodayDateString();
-    
-    // Ambil commit untuk semua repo secara paralel menggunakan Promise.all
-    const fetchPromises = reposToFetch.map(async ({ owner, repo }) => {
-      try {
-        const result = await client.callTool({
-          name: 'list_commits',
-          arguments: { owner, repo }
-        });
-
-        if (!result || !result.content || result.content.length === 0) {
-          return [];
-        }
-
-        const commitsData = JSON.parse(result.content[0].text);
-        return commitsData
-          .filter(c => {
-            if (c && c.commit && c.commit.author && c.commit.author.date) {
-              const commitDate = getLocalDateString(c.commit.author.date);
-              return commitDate === today;
-            }
-            return false;
-          })
-          .map(c => ({
-            repo: `${owner}/${repo}`,
-            sha: c.sha,
-            message: c.commit.message,
-            author: c.commit.author.name,
-            date: c.commit.author.date
-          }));
-      } catch (error) {
-        console.error(`[ERROR] Gagal mengambil commit dari ${owner}/${repo}:`, error.message);
-        return [];
-      }
+    const result = await client.callTool({
+      name: 'list_commits',
+      arguments: { owner, repo, perPage: limit }
     });
 
-    const results = await Promise.all(fetchPromises);
-    // Gabungkan hasil array
-    return results.flat();
+    if (!result || !result.content || result.content.length === 0) {
+      return [];
+    }
+
+    const commitsData = JSON.parse(result.content[0].text);
+    return commitsData.slice(0, limit).map(c => ({
+      sha: c.sha,
+      message: c.commit.message,
+      author: c.commit.author.name,
+      date: c.commit.author.date
+    }));
   } catch (error) {
-    console.error('[ERROR] Gagal inisialisasi MCP client:', error.message);
+    console.error(`[ERROR] Gagal mengambil commit dari ${owner}/${repo}:`, error.message);
     return [];
   } finally {
     try {
@@ -221,4 +177,19 @@ export async function getTodayCommits(repositories) {
       // Abaikan error saat close
     }
   }
+}
+
+/**
+ * Mengambil commit hari ini dari repository GitHub menggunakan GitHub MCP Server.
+ * @param {string} owner - Owner repository.
+ * @param {string} repo - Nama repository.
+ * @returns {Promise<Array>} Daftar commit hari ini.
+ */
+export async function getTodayCommits(owner, repo) {
+  const commits = await getLastCommits(owner, repo, 30);
+  const today = getTodayDateString();
+  return commits.filter(c => {
+    const commitDate = getLocalDateString(c.date);
+    return commitDate === today;
+  });
 }
